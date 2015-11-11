@@ -151,3 +151,18 @@ class SessionForm(messages.Message):
 class SessionForms(messages.Message):
     """SessionForms -- multiple Session outbound form message"""
     items = messages.MessageField(SessionForm, 1, repeated=True)
+
+
+class Speaker(ndb.Model):
+    name = ndb.StringProperty(required=True)
+    title = ndb.StringProperty()
+    description = ndb.StringProperty()
+    topics = ndb.StringProperty(repeated=True)
+
+
+class SpeakerForm(messages.Message):
+    """SpeakerForm -- Speaker outbound form message"""
+    name = messages.StringField(1)
+    title = messages.StringField(2)
+    description = messages.StringField(3)
+    topics = messages.StringField(4, repeated=True)

@@ -23,6 +23,8 @@ from models import TeeShirtSize
 from models import Session
 from models import SessionForm
 from models import SessionForms
+from models import Speaker
+from models import SpeakerForm
 
 from settings import WEB_CLIENT_ID
 from settings import ANDROID_CLIENT_ID
@@ -103,6 +105,11 @@ SESSION_POST_REQUEST = endpoints.ResourceContainer(
     SessionForm,
     websafeConferenceKey=messages.StringField(1),
     websafeSessionKey=messages.StringField(2)
+)
+
+SPEAKER_GET_REQUEST = endpoints.ResourceContainer(
+    message_types.VoidMessage,
+    speakerName=messages.StringField(1),
 )
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -780,13 +787,69 @@ class ConferenceApi(remote.Service):
                       http_method='GET', name='getSessionsBySpeaker')
     def getSessionsBySpeaker(self, request):
         """Get all sessions given by the speaker across all conferences"""
-        sessions = Session.query(Session.speaker == request.speaker).fetch()
+        # get the speaker
+        speaker = Speaker.query(Speaker.name == request.speaker).get()
+
+        if not speaker:
+                raise endpoints.NotFoundException(
+                    'No speaker found with key: %s' %
+                    request.speaker)
+
+        # get the sessions of this speaker
+        sessions = Session.query(Session.speaker == speaker.name).fetch()
 
         # return set of SessionForm objects per Session
         return SessionForms(
             items=[self._copySessionToForm(session)
                    for session in sessions]
         )
+
+    @endpoints.method(SpeakerForm, SpeakerForm, path='speaker',
+                      http_method='POST', name='createSpeaker')
+    def createSpeaker(self, request):
+        """Create new speaker."""
+        return self._createSpeakerObject(request)
+
+    def _createSpeakerObject(self, request):
+        """Create Speaker object,
+           returning SpeakerForm."""
+
+        # make sure the request contains the speaker name
+        if not request.name:
+            raise endpoints.BadRequestException(
+                  "Speaker 'name' field required")
+
+        # copy SpeakerForm/ProtoRPC Message into dict
+        data = {field.name: getattr(request, field.name)
+                for field in request.all_fields()}
+
+        # create speaker in data store and return request
+        Speaker(**data).put()
+        return request
+
+    @endpoints.method(SPEAKER_GET_REQUEST, SpeakerForm,
+                      path='speaker/{speakerName}',
+                      http_method='GET', name='getSpeaker')
+    def getSpeaker(self, request):
+        """Return requested speaker (by speaker name)."""
+        # get Speaker object from request; bail if not found
+        speaker = Speaker.query(Speaker.name == request.speakerName).get()
+
+        if not speaker:
+                raise endpoints.NotFoundException(
+                    'No speaker found with key: %s' %
+                    request.speakerName)
+        # return SpeakerForm
+        return self._copySpeakerToForm(speaker)
+
+    def _copySpeakerToForm(self, speaker):
+        """Copy relevant fields from Speaker to SpeakerForm."""
+        sf = SpeakerForm()
+        for field in sf.all_fields():
+            if hasattr(speaker, field.name):
+                    setattr(sf, field.name, getattr(speaker, field.name))
+        sf.check_initialized()
+        return sf
 
 # register API
 api = endpoints.api_server([ConferenceApi])
