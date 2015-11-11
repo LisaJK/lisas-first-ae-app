@@ -127,7 +127,6 @@ class ConferenceQueryForms(messages.Message):
 class Session(ndb.Model):
     """Session -- Session object"""
     name = ndb.StringProperty(required=True)
-    organizerUserId = ndb.StringProperty()
     highlights = ndb.StringProperty(repeated=True)
     speaker = ndb.StringProperty()
     type = ndb.StringProperty()
