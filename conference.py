@@ -42,6 +42,7 @@ conference.py -- Udacity conference server-side Python App Engine API;
 $Id: conference.py,v 1.25 2014/05/24 23:42:19 wesc Exp wesc $
 
 created by wesc on 2014 apr 21
+extended by Lisa Kugler
 
 """
 
@@ -98,7 +99,9 @@ SESSION_GET_REQUEST = endpoints.ResourceContainer(
     websafeSessionKey=messages.StringField(1),
     websafeConferenceKey=messages.StringField(2),
     typeOfSession=messages.StringField(3),
-    speaker=messages.StringField(4)
+    speaker=messages.StringField(4),
+    startTime=messages.StringField(5),
+    excludedTypes=messages.StringField(6)
 )
 
 SESSION_POST_REQUEST = endpoints.ResourceContainer(
@@ -136,7 +139,7 @@ class ConferenceApi(remote.Service):
                     setattr(cf, field.name, str(getattr(conf, field.name)))
                 else:
                     setattr(cf, field.name, getattr(conf, field.name))
-            elif field.name == "websafeKey":
+            elif field.name == "websafeConferenceKey":
                 setattr(cf, field.name, conf.key.urlsafe())
         if displayName:
             setattr(cf, 'organizerDisplayName', displayName)
@@ -159,7 +162,7 @@ class ConferenceApi(remote.Service):
         # copy ConferenceForm/ProtoRPC Message into dict
         data = {field.name: getattr(request, field.name)
                 for field in request.all_fields()}
-        del data['websafeKey']
+        del data['websafeConferenceKey']
         del data['organizerDisplayName']
 
         # add default values for those missing
@@ -648,12 +651,15 @@ class ConferenceApi(remote.Service):
             data['date'] = datetime.strptime(data['date'][:10],
                                              "%Y-%m-%d").date()
 
+        # convert start time from string to Time objects;
+        if data['startTime']:
+            data['startTime'] = datetime.strptime(data, "%H:%M").time()
         # generate session key
         s_id = Session.allocate_ids(size=1, parent=c_key)[0]
         s_key = ndb.Key(Session, s_id, parent=c_key)
         data['key'] = s_key
         del data['websafeConferenceKey']
-        del data['websafeKey']
+        del data['websafeSessionKey']
 
         # create session in data store and return request
         Session(**data).put()
@@ -671,7 +677,6 @@ class ConferenceApi(remote.Service):
                     'No session found with key: %s' %
                     request.websafeSessionKey)
         # return SessionForm
-        session
         return self._copySessionToForm(session)
 
     @endpoints.method(CONF_POST_REQUEST, SessionForms,
@@ -737,6 +742,8 @@ class ConferenceApi(remote.Service):
                 # special handling for dates (convert string to Date)
                 if field.name == 'date':
                     data = datetime.strptime(data, "%Y-%m-%d").date()
+                if field.name == 'startTime':
+                    data = datetime.strptime(data, "%H:%M").time()
                 # write to Session object
                 setattr(session, field.name, data)
         # update session in data store
@@ -749,11 +756,11 @@ class ConferenceApi(remote.Service):
         for field in sf.all_fields():
             if hasattr(session, field.name):
                 # convert Date to date string; just copy others
-                if field.name == "date":
+                if field.name == "date" or field.name == "startTime":
                     setattr(sf, field.name, str(getattr(session, field.name)))
                 else:
                     setattr(sf, field.name, getattr(session, field.name))
-            elif field.name == "websafeKey":
+            elif field.name == "websafeSessionKey":
                 setattr(sf, field.name, session.key.urlsafe())
         sf.check_initialized()
         return sf
@@ -850,6 +857,99 @@ class ConferenceApi(remote.Service):
                     setattr(sf, field.name, getattr(speaker, field.name))
         sf.check_initialized()
         return sf
+
+    @endpoints.method(SESSION_GET_REQUEST, BooleanMessage,
+                      path='addSessionToWishlist',
+                      http_method='POST', name='addSessionToWishlist')
+    def addSessionToWishlist(self, request):
+        """Adds the given session to the wishlist of the user"""
+        # get profile
+        prof = self._getProfileFromUser()
+
+        # check if session is already in wishlist
+        if request.websafeSessionKey in prof.sessionWishlist:
+                raise ConflictException(
+                    "This session is already on your wishlist")
+
+        prof.sessionWishlist.append(request.websafeSessionKey)
+        prof.put()
+
+        return BooleanMessage(data=True)
+
+    @endpoints.method(message_types.VoidMessage, SessionForms,
+                      path='getSessionsInWishlist',
+                      http_method='GET', name='getSessionsInWishlist')
+    def getSessionsInWishlist(self, request):
+        """Returns all sessions in the user's wishlist"""
+        # get profile
+        prof = self._getProfileFromUser()
+        session_keys = [ndb.Key(urlsafe=swl)
+                        for swl in prof.sessionWishlist]
+        sessions = ndb.get_multi(session_keys)
+
+        # return set of Session Form objects per Session
+        return SessionForms(
+            items=[self._copySessionToForm(session)
+                   for session in sessions])
+
+    @endpoints.method(CONF_GET_REQUEST, SessionForms,
+                      path='getSessionsOfConferenceInWishlist',
+                      http_method='GET',
+                      name='getSessionsOfConferenceInWishlist')
+    def getSessionsOfConferenceInWishlist(self, request):
+        """Returns all sessions of the conference in the user's wishlist"""
+        # get Conference object from request; bail if not found
+        conf = ndb.Key(urlsafe=request.websafeConferenceKey).get()
+        if not conf:
+            raise endpoints.NotFoundException(
+                    'No conference found with key: %s' %
+                    request.websafeConferenceKey)
+        # get Profile
+        prof = conf.key.parent().get()
+
+        # get the Sessions from data store
+        session_keys = []
+        for swl in prof.sessionWishlist:
+            session_key = ndb.Key(urlsafe=swl)
+            if session_key.parent().get() == conf:
+                session_keys.append(session_key)
+
+        sessions = ndb.get_multi(session_keys)
+
+        # return set of Session Form objects per Session
+        return SessionForms(
+            items=[self._copySessionToForm(session) for session in sessions])
+
+    @endpoints.method(SESSION_GET_REQUEST, SessionForms,
+                      path='getSessionsOfConferenceBeforeStartTimeExcludingTypes',
+                      http_method='GET',
+                      name='getSessionsOfConferenceBeforeStartTimeExcludingTypes')
+    def getSessionsOfConferenceBeforeStartTimeExcludingTypes(self, request):
+        """Returns all sessions of the conference before the start time excluding the types"""
+        # get Conference object from request; bail if not found
+        conf_key = ndb.Key(urlsafe=request.websafeConferenceKey)
+        conf = conf_key.get()
+        if not conf:
+            raise endpoints.NotFoundException(
+                    'No conference found with key: %s' %
+                    request.websafeConferenceKey)
+
+        # get only sessions before given start time
+        startTime = datetime.strptime(request.startTime, "%H:%M").time()
+        sessions_before = Session.query(Session.startTime <= startTime,
+                                        ancestor=conf_key).fetch()
+
+        # get sessions excluding the given types
+        excluded_types = request.excludedTypes.split()
+
+        sessions = []
+        for session in sessions_before:
+            if session.type not in excluded_types:
+                sessions.append(session)
+
+        # return set of SessionForm objectstime per Session
+        return SessionForms(
+            items=[self._copySessionToForm(session) for session in sessions])
 
 # register API
 api = endpoints.api_server([ConferenceApi])
