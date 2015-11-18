@@ -264,11 +264,7 @@ class ConferenceApi(remote.Service):
     def getConference(self, request):
         """Return requested conference (by websafeConferenceKey)."""
         # get Conference object from request; bail if not found
-        conf = ndb.Key(urlsafe=request.websafeConferenceKey).get()
-        if not conf:
-            raise endpoints.NotFoundException(
-                    'No conference found with key: %s' %
-                    request.websafeConferenceKey)
+        conf = self._getConf(request.websafeConferenceKey)
         prof = conf.key.parent().get()
         # return ConferenceForm
         return self._copyConferenceToForm(conf, getattr(prof, 'displayName'))
@@ -373,6 +369,16 @@ class ConferenceApi(remote.Service):
                                                   names[conf.organizerUserId])
                        for conf in conferences]
         )
+
+    def _getConf(self, websafeConferenceKey):
+        """Returns Conference object; bail if not found"""
+        conf_key = ndb.Key(urlsafe=websafeConferenceKey)
+        conf = conf_key.get()
+        if not conf:
+            raise endpoints.NotFoundException(
+                    'No conference found with key: %s' %
+                    websafeConferenceKey)
+        return conf
 
 
 # - - - Profile objects - - - - - - - - - - - - - - - - - - -
@@ -621,14 +627,7 @@ class ConferenceApi(remote.Service):
                   "Session 'name' field required")
 
         # get the conference the session is in
-        c_key = ndb.Key(urlsafe=request.websafeConferenceKey)
-        conf = c_key.get()
-
-        # check that conference exists
-        if not conf:
-            raise endpoints.NotFoundException(
-                    'No conference found with key: %s' %
-                    request.websafeConferenceKey)
+        conf = self._getConf(request.websafeConferenceKey)
 
         # check that user is owner
         if user_id != conf.organizerUserId:
@@ -655,8 +654,8 @@ class ConferenceApi(remote.Service):
         if data['startTime']:
             data['startTime'] = datetime.strptime(data, "%H:%M").time()
         # generate session key
-        s_id = Session.allocate_ids(size=1, parent=c_key)[0]
-        s_key = ndb.Key(Session, s_id, parent=c_key)
+        s_id = Session.allocate_ids(size=1, parent=conf.key)[0]
+        s_key = ndb.Key(Session, s_id, parent=conf.key)
         data['key'] = s_key
         del data['websafeConferenceKey']
         del data['websafeSessionKey']
@@ -686,15 +685,10 @@ class ConferenceApi(remote.Service):
         """Return all sessions of the given conference"""
 
         # get the conference
-        conf_key = ndb.Key(urlsafe=request.websafeConferenceKey)
-        conf = conf_key.get()
-        if not conf:
-            raise endpoints.NotFoundException(
-                    'No conference found with key: %s' %
-                    request.websafeConferenceKey)
+        conf = self._getConf(request.websafeConferenceKey)
 
         # get all sessions of the conference
-        sessions = Session.query(ancestor=conf_key)
+        sessions = Session.query(ancestor=conf.key)
         return SessionForms(items=[self._copySessionToForm(session)
                             for session in sessions])
 
@@ -771,17 +765,12 @@ class ConferenceApi(remote.Service):
     def getConferenceSessionsByType(self, request):
         """ Get all sessions of the conference of the given types"""
         # get the conference
-        conf_key = ndb.Key(urlsafe=request.websafeConferenceKey)
-        conf = conf_key.get()
-        if not conf:
-            raise endpoints.NotFoundException(
-                    'No conference found with key: %s' %
-                    request.websafeConferenceKey)
+        conf = self._getConf(request.websafeConferenceKey)
 
         # get all sessions of the conference with the given type
         sessions = Session.query(
                               Session.type == request.typeOfSession,
-                              ancestor=conf_key).fetch()
+                              ancestor=conf.key).fetch()
 
         # return set of SessionForm objects per Session
         return SessionForms(
@@ -899,11 +888,8 @@ class ConferenceApi(remote.Service):
     def getSessionsOfConferenceInWishlist(self, request):
         """Returns all sessions of the conference in the user's wishlist"""
         # get Conference object from request; bail if not found
-        conf = ndb.Key(urlsafe=request.websafeConferenceKey).get()
-        if not conf:
-            raise endpoints.NotFoundException(
-                    'No conference found with key: %s' %
-                    request.websafeConferenceKey)
+        conf = self._getConf(request.websafeConferenceKey)
+
         # get Profile
         prof = conf.key.parent().get()
 
@@ -921,23 +907,19 @@ class ConferenceApi(remote.Service):
             items=[self._copySessionToForm(session) for session in sessions])
 
     @endpoints.method(SESSION_GET_REQUEST, SessionForms,
-                      path='getSessionsOfConferenceBeforeStartTimeExcludingTypes',
+                      path='getSessionsOfConfBeforeStartTimeExclTypes',
                       http_method='GET',
-                      name='getSessionsOfConferenceBeforeStartTimeExcludingTypes')
+                      name='getSessionsOfConfBeforeStartTimeExclTypes')
     def getSessionsOfConferenceBeforeStartTimeExcludingTypes(self, request):
-        """Returns all sessions of the conference before the start time excluding the types"""
+        """Returns all sessions of the conference
+           before the start time excluding the types"""
         # get Conference object from request; bail if not found
-        conf_key = ndb.Key(urlsafe=request.websafeConferenceKey)
-        conf = conf_key.get()
-        if not conf:
-            raise endpoints.NotFoundException(
-                    'No conference found with key: %s' %
-                    request.websafeConferenceKey)
+        conf = self._getConf(request.websafeConferenceKey)
 
         # get only sessions before given start time
         startTime = datetime.strptime(request.startTime, "%H:%M").time()
         sessions_before = Session.query(Session.startTime <= startTime,
-                                        ancestor=conf_key).fetch()
+                                        ancestor=conf.key).fetch()
 
         # get sessions excluding the given types
         excluded_types = request.excludedTypes.split()
@@ -947,9 +929,39 @@ class ConferenceApi(remote.Service):
             if session.type not in excluded_types:
                 sessions.append(session)
 
-        # return set of SessionForm objectstime per Session
+        # return set of SessionForm objects per Session
         return SessionForms(
             items=[self._copySessionToForm(session) for session in sessions])
+
+    @endpoints.method(CONF_GET_REQUEST, SessionForms,
+                      path='getSessionsOfConferenceToday',
+                      http_method='GET',
+                      name='getSessionsOfConferenceToday')
+    def getSessionsOfConferenceToday(self, request):
+        """Returns all sessios of today of the conference"""
+        conf = self._getConf(request.websafeConferenceKey)
+        sessions = Session.query(Session.date == datetime.today().date(),
+                                 ancestor=conf.key).fetch()
+
+        # return set of SessionForm objects per Session
+        return SessionForms(
+            items=[self._copySessionToForm(session) for session in sessions])
+
+    @endpoints.method(CONF_GET_REQUEST, StringMessage,
+                      path='getHighlightsOfConference',
+                      http_method='GET',
+                      name='getHighlightsOfConference')
+    def getHighlightsOfConference(self, request):
+        """Returns the highlights of all sessions of the conference"""
+        conf = self._getConf(request.websafeConferenceKey)
+        sessions = Session.query(ancestor=conf.key).fetch()
+        highlights = []
+        for session in sessions:
+            for h in session.highlights:
+                if h not in highlights:
+                    highlights.append(h)
+
+        return StringMessage(data=', '.join(highlights))
 
 # register API
 api = endpoints.api_server([ConferenceApi])
