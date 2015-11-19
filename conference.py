@@ -86,33 +86,36 @@ FIELDS = {
 
 CONF_GET_REQUEST = endpoints.ResourceContainer(
     message_types.VoidMessage,
-    websafeConferenceKey=messages.StringField(1),
+    websafeConferenceKey=messages.StringField(1)
 )
 
 CONF_POST_REQUEST = endpoints.ResourceContainer(
     ConferenceForm,
-    websafeConferenceKey=messages.StringField(1),
+    websafeConferenceKey=messages.StringField(1)
 )
 
 SESSION_GET_REQUEST = endpoints.ResourceContainer(
-    message_types.VoidMessage,
-    websafeSessionKey=messages.StringField(1),
-    websafeConferenceKey=messages.StringField(2),
-    typeOfSession=messages.StringField(3),
-    speaker=messages.StringField(4),
-    startTime=messages.StringField(5),
-    excludedTypes=messages.StringField(6)
+    websafeSessionKey=messages.StringField(1, required=True)
+)
+
+SESSION_TYPE_GET_REQUEST = endpoints.ResourceContainer(
+    websafeConferenceKey=messages.StringField(1, required=True),
+    typeOfSession=messages.StringField(2)
+)
+
+SESSION_TIME_EXCLTYPES_GET_REQUEST = endpoints.ResourceContainer(
+    websafeConferenceKey=messages.StringField(1, required=True),
+    startTime=messages.StringField(2),
+    excludedTypes=messages.StringField(3, repeated=True)
 )
 
 SESSION_POST_REQUEST = endpoints.ResourceContainer(
     SessionForm,
-    websafeConferenceKey=messages.StringField(1),
-    websafeSessionKey=messages.StringField(2)
+    websafeSessionKey=messages.StringField(1)
 )
 
 SPEAKER_GET_REQUEST = endpoints.ResourceContainer(
-    message_types.VoidMessage,
-    speakerName=messages.StringField(1),
+    speakerName=messages.StringField(1, required=True),
 )
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -606,8 +609,10 @@ class ConferenceApi(remote.Service):
 
     # - - - Session objects - - - - - - - - - - - - - - - - -
 
-    @endpoints.method(SessionForm, SessionForm, path='session',
-                      http_method='POST', name='createSession')
+    @endpoints.method(SessionForm,
+                      SessionForm,
+                      http_method='POST',
+                      name='createSession')
     def createSession(self, request):
         """Create new session."""
         return self._createSessionObject(request)
@@ -652,21 +657,29 @@ class ConferenceApi(remote.Service):
 
         # convert start time from string to Time objects;
         if data['startTime']:
-            data['startTime'] = datetime.strptime(data, "%H:%M").time()
+            data['startTime'] = datetime.strptime(
+                data['startTime'], "%H:%M").time()
+
         # generate session key
         s_id = Session.allocate_ids(size=1, parent=conf.key)[0]
         s_key = ndb.Key(Session, s_id, parent=conf.key)
         data['key'] = s_key
+
         del data['websafeConferenceKey']
         del data['websafeSessionKey']
 
         # create session in data store and return request
         Session(**data).put()
+
+        # add websafeSessionKey to the request
+        request.websafeSessionKey = s_key.urlsafe()
+
         return request
 
-    @endpoints.method(SESSION_GET_REQUEST, SessionForm,
-                      path='session/{websafeSessionKey}',
-                      http_method='GET', name='getSession')
+    @endpoints.method(SESSION_GET_REQUEST,
+                      SessionForm,
+                      http_method='GET',
+                      name='getSession')
     def getSession(self, request):
         """Return requested session (by websafeSessionKey)."""
         # get Session object from request; bail if not found
@@ -680,7 +693,8 @@ class ConferenceApi(remote.Service):
 
     @endpoints.method(CONF_POST_REQUEST, SessionForms,
                       path='getConferenceSessions',
-                      http_method='POST', name='getConferenceSessions')
+                      http_method='POST',
+                      name='getConferenceSessions')
     def getConferenceSessions(self, request):
         """Return all sessions of the given conference"""
 
@@ -692,10 +706,10 @@ class ConferenceApi(remote.Service):
         return SessionForms(items=[self._copySessionToForm(session)
                             for session in sessions])
 
-    @endpoints.method(SESSION_POST_REQUEST, SessionForm,
-                      path='conference/{websafeConferenceKey}'
-                           '/{websafeSessionKey}',
-                      http_method='PUT', name='updateSession')
+    @endpoints.method(SESSION_POST_REQUEST,
+                      SessionForm,
+                      http_method='PUT',
+                      name='updateSession')
     def updateSession(self, request):
         """Update session w/provided fields & return w/updated info."""
         return self._updateSessionObject(request)
@@ -722,7 +736,8 @@ class ConferenceApi(remote.Service):
                     request.websafeSessionKey)
 
         # check that user is owner of the conference
-        conf = ndb.Key(urlsafe=request.websafeConferenceKey).get()
+        conf = session.key.parent().get()
+
         if user_id != conf.organizerUserId:
             raise endpoints.ForbiddenException(
                 'Only the owner can update the session.')
@@ -755,13 +770,16 @@ class ConferenceApi(remote.Service):
                 else:
                     setattr(sf, field.name, getattr(session, field.name))
             elif field.name == "websafeSessionKey":
-                setattr(sf, field.name, session.key.urlsafe())
+                    setattr(sf, field.name, session.key.urlsafe())
+            elif field.name == "websafeConferenceKey":
+                    setattr(sf, field.name, session.key.parent().urlsafe())
         sf.check_initialized()
         return sf
 
-    @endpoints.method(SESSION_GET_REQUEST, SessionForms,
-                      path='getConferenceSessionsByType',
-                      http_method='GET', name='getConferenceSessionsByType')
+    @endpoints.method(SESSION_TYPE_GET_REQUEST,
+                      SessionForms,
+                      http_method='GET',
+                      name='getConferenceSessionsByType')
     def getConferenceSessionsByType(self, request):
         """ Get all sessions of the conference of the given types"""
         # get the conference
@@ -778,18 +796,19 @@ class ConferenceApi(remote.Service):
                    for session in sessions]
         )
 
-    @endpoints.method(SESSION_GET_REQUEST, SessionForms,
-                      path='getSessionsBySpeaker',
-                      http_method='GET', name='getSessionsBySpeaker')
+    @endpoints.method(SPEAKER_GET_REQUEST,
+                      SessionForms,
+                      http_method='GET',
+                      name='getSessionsBySpeaker')
     def getSessionsBySpeaker(self, request):
         """Get all sessions given by the speaker across all conferences"""
         # get the speaker
-        speaker = Speaker.query(Speaker.name == request.speaker).get()
+        speaker = Speaker.query(Speaker.name == request.speakerName).get()
 
         if not speaker:
                 raise endpoints.NotFoundException(
                     'No speaker found with key: %s' %
-                    request.speaker)
+                    request.speakerName)
 
         # get the sessions of this speaker
         sessions = Session.query(Session.speaker == speaker.name).fetch()
@@ -800,8 +819,10 @@ class ConferenceApi(remote.Service):
                    for session in sessions]
         )
 
-    @endpoints.method(SpeakerForm, SpeakerForm, path='speaker',
-                      http_method='POST', name='createSpeaker')
+    @endpoints.method(SpeakerForm,
+                      SpeakerForm,
+                      http_method='POST',
+                      name='createSpeaker')
     def createSpeaker(self, request):
         """Create new speaker."""
         return self._createSpeakerObject(request)
@@ -823,9 +844,10 @@ class ConferenceApi(remote.Service):
         Speaker(**data).put()
         return request
 
-    @endpoints.method(SPEAKER_GET_REQUEST, SpeakerForm,
-                      path='speaker/{speakerName}',
-                      http_method='GET', name='getSpeaker')
+    @endpoints.method(SPEAKER_GET_REQUEST,
+                      SpeakerForm,
+                      http_method='GET',
+                      name='getSpeaker')
     def getSpeaker(self, request):
         """Return requested speaker (by speaker name)."""
         # get Speaker object from request; bail if not found
@@ -847,9 +869,10 @@ class ConferenceApi(remote.Service):
         sf.check_initialized()
         return sf
 
-    @endpoints.method(SESSION_GET_REQUEST, BooleanMessage,
-                      path='addSessionToWishlist',
-                      http_method='POST', name='addSessionToWishlist')
+    @endpoints.method(SESSION_GET_REQUEST,
+                      BooleanMessage,
+                      http_method='POST',
+                      name='addSessionToWishlist')
     def addSessionToWishlist(self, request):
         """Adds the given session to the wishlist of the user"""
         # get profile
@@ -865,10 +888,11 @@ class ConferenceApi(remote.Service):
 
         return BooleanMessage(data=True)
 
-    @endpoints.method(message_types.VoidMessage, SessionForms,
-                      path='getSessionsInWishlist',
-                      http_method='GET', name='getSessionsInWishlist')
-    def getSessionsInWishlist(self, request):
+    @endpoints.method(message_types.VoidMessage,
+                      SessionForms,
+                      http_method='GET',
+                      name='getAllSessionsInWishlist')
+    def getAllSessionsInWishlist(self, request):
         """Returns all sessions in the user's wishlist"""
         # get profile
         prof = self._getProfileFromUser()
@@ -881,11 +905,11 @@ class ConferenceApi(remote.Service):
             items=[self._copySessionToForm(session)
                    for session in sessions])
 
-    @endpoints.method(CONF_GET_REQUEST, SessionForms,
-                      path='getSessionsOfConferenceInWishlist',
+    @endpoints.method(CONF_GET_REQUEST,
+                      SessionForms,
                       http_method='GET',
-                      name='getSessionsOfConferenceInWishlist')
-    def getSessionsOfConferenceInWishlist(self, request):
+                      name='getSessionsInWishlist')
+    def getSessionsInWishlist(self, request):
         """Returns all sessions of the conference in the user's wishlist"""
         # get Conference object from request; bail if not found
         conf = self._getConf(request.websafeConferenceKey)
@@ -906,11 +930,11 @@ class ConferenceApi(remote.Service):
         return SessionForms(
             items=[self._copySessionToForm(session) for session in sessions])
 
-    @endpoints.method(SESSION_GET_REQUEST, SessionForms,
-                      path='getSessionsOfConfBeforeStartTimeExclTypes',
+    @endpoints.method(SESSION_TIME_EXCLTYPES_GET_REQUEST,
+                      SessionForms,
                       http_method='GET',
-                      name='getSessionsOfConfBeforeStartTimeExclTypes')
-    def getSessionsOfConferenceBeforeStartTimeExcludingTypes(self, request):
+                      name='getSessionsOfConferenceBeforeStartTimeExclTypes')
+    def getSessionsOfConferenceBeforeStartTimeExclTypes(self, request):
         """Returns all sessions of the conference
            before the start time excluding the types"""
         # get Conference object from request; bail if not found
@@ -922,19 +946,42 @@ class ConferenceApi(remote.Service):
                                         ancestor=conf.key).fetch()
 
         # get sessions excluding the given types
-        excluded_types = request.excludedTypes.split()
-
         sessions = []
         for session in sessions_before:
-            if session.type not in excluded_types:
+            if session.type not in request.excludedTypes:
                 sessions.append(session)
 
         # return set of SessionForm objects per Session
         return SessionForms(
             items=[self._copySessionToForm(session) for session in sessions])
 
-    @endpoints.method(CONF_GET_REQUEST, SessionForms,
-                      path='getSessionsOfConferenceToday',
+    @endpoints.method(CONF_GET_REQUEST,
+                      SessionForms,
+                      http_method='GET',
+                      name='getNonWSSessionsOfConfBefore7pm')
+    def getNonWSSessionsOfConfBefore7pm(self, request):
+        """Returns all sessions of the conference
+           before the 7pm excluding workshops"""
+        # get Conference object from request; bail if not found
+        conf = self._getConf(request.websafeConferenceKey)
+
+        # get only non-workshop sessions
+        non_ws_sessions = Session.query(Session.type != "workshop",
+                                        ancestor=conf.key).fetch()
+
+        # filter all sessions before 7pm or start time not defined yet
+        startTime = datetime.strptime("19:00", "%H:%M").time()
+        sessions = []
+        for session in non_ws_sessions:
+            if not session.startTime or session.startTime <= startTime:
+                sessions.append(session)
+
+        # return set of SessionForm objects per Session
+        return SessionForms(
+            items=[self._copySessionToForm(session) for session in sessions])
+
+    @endpoints.method(CONF_GET_REQUEST,
+                      SessionForms,
                       http_method='GET',
                       name='getSessionsOfConferenceToday')
     def getSessionsOfConferenceToday(self, request):
@@ -947,8 +994,8 @@ class ConferenceApi(remote.Service):
         return SessionForms(
             items=[self._copySessionToForm(session) for session in sessions])
 
-    @endpoints.method(CONF_GET_REQUEST, StringMessage,
-                      path='getHighlightsOfConference',
+    @endpoints.method(CONF_GET_REQUEST,
+                      StringMessage,
                       http_method='GET',
                       name='getHighlightsOfConference')
     def getHighlightsOfConference(self, request):
