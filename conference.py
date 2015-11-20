@@ -50,9 +50,11 @@ __author__ = 'wesc+api@google.com (Wesley Chun)'
 
 EMAIL_SCOPE = endpoints.EMAIL_SCOPE
 API_EXPLORER_CLIENT_ID = endpoints.API_EXPLORER_CLIENT_ID
-MEMCACHE_ANNOUNCEMENTS_KEY = "RECENT_ANNOUNCEMENTS"
+MEMCACHE_ANNOUNCEMENTS_KEY = 'RECENT_ANNOUNCEMENTS'
 ANNOUNCEMENT_TPL = ('Last chance to attend! The following conferences '
                     'are nearly sold out: %s')
+MEMCACHE_FEATURE_KEY = 'FEATURED_SPEAKER'
+FEATURED_SPEAKER_TPL = ('The featured speaker is: %s (Sessions: %s)')
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 DEFAULTS_CONF = {
@@ -674,6 +676,17 @@ class ConferenceApi(remote.Service):
         # add websafeSessionKey to the request
         request.websafeSessionKey = s_key.urlsafe()
 
+        # check the speaker and add task to the queue
+        sessions_of_speaker = Session.query(Session.speaker == data['speaker'],
+                                            ancestor=conf.key).fetch()
+        speaker_sessions = ', '.join(
+            session.name for session in sessions_of_speaker)
+        if len(sessions_of_speaker) > 1:
+            taskqueue.add(url='/tasks/set_featured_speaker',
+                          params={'sessions': speaker_sessions,
+                                  'speaker': data['speaker']},
+                          method='GET')
+
         return request
 
     @endpoints.method(SESSION_GET_REQUEST,
@@ -1009,6 +1022,21 @@ class ConferenceApi(remote.Service):
                     highlights.append(h)
 
         return StringMessage(data=', '.join(highlights))
+
+    @endpoints.method(message_types.VoidMessage,
+                      StringMessage,
+                      http_method='GET', name='getFeaturedSpeaker')
+    def getFeaturedSpeaker(self, request):
+        """Return Featured Speaker from memcache."""
+        featured_speaker = memcache.get(MEMCACHE_FEATURE_KEY)
+        return StringMessage(data=featured_speaker or "")
+
+    @staticmethod
+    def _cacheFeaturedSpeaker(speaker, sessions):
+        """Create Featured Speaker & assign to memcache"""
+        featured_speaker = FEATURED_SPEAKER_TPL % (speaker, sessions)
+        memcache.set(MEMCACHE_FEATURE_KEY, featured_speaker)
+        return sessions
 
 # register API
 api = endpoints.api_server([ConferenceApi])
