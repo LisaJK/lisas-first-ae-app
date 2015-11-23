@@ -164,7 +164,7 @@ class Speaker(ndb.Model):
 
 class SpeakerForm(messages.Message):
     """SpeakerForm -- Speaker outbound form message"""
-    name = messages.StringField(1)
+    name = messages.StringField(1, required=True)
     title = messages.StringField(2)
     description = messages.StringField(3)
     topics = messages.StringField(4, repeated=True)
