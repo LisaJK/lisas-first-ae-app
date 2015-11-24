@@ -99,16 +99,22 @@ https://lisas-first-ae-app.appspot.com/_ah/api/explorer
 1. First, make sure you have the Google App Engine SDK for Python installed:
    https://cloud.google.com/appengine/downloads
 2. Clone the repository from GitHub:
-   $ git clone https://github.com/LisaJK/lisas-first-ae-app.git
-3. Register the app in the Google Developers Console
-   https://console.developers.google.com
-4. Open app.yaml and set the value of ´application´ to your app id
-5. Open the Google App Engine Launcher and add an existing application
-6. Run the app with the Google App Engine Launcher
-7. Test the app using http://localhost:8080/_ah/api/explorer
+   `$ git clone https://github.com/LisaJK/lisas-first-ae-app.git`
+3. Update the value of `application` in `app.yaml` to the app ID you
+   have registered in the App Engine admin console and would like to use to host
+   your instance of this app.
+4. Update the values at the top of `settings.py` to
+   reflect the respective client IDs you have registered in the
+   Developers Console: https://console.developers.google.com
+5. Update the value of CLIENT_ID in `static/js/app.js` to the Web client ID
+6. (Optional) Mark the configuration files as unchanged as follows:
+   `$ git update-index --assume-unchanged app.yaml settings.py static/js/app.js`
+7. Open the Google App Engine Launcher and add the existing application
+8. Run the app with the Google App Engine Launcher
+9. Test the app using http://localhost:8080/_ah/api/explorer
     - you have to allow your browser active content via HTTP at this site, 
       on Chrome, click the shield in the URL bar
     - check in the Google App Engine Launcher Log if the port is really 8080
- 
+
 ####**CONTACT**
 lisa.kugler@googlemail.com

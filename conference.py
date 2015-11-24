@@ -662,6 +662,15 @@ class ConferenceApi(remote.Service):
             data['startTime'] = datetime.strptime(
                 data['startTime'], "%H:%M").time()
 
+        # check that the speaker exists
+        if data['speaker']:
+            speaker = Speaker.query(Speaker.name == request.speaker).get()
+
+            if not speaker:
+                raise endpoints.NotFoundException(
+                    'No speaker found with name: %s' %
+                    request.speaker)
+
         # generate session key
         s_id = Session.allocate_ids(size=1, parent=conf.key)[0]
         s_key = ndb.Key(Session, s_id, parent=conf.key)
