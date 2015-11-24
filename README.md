@@ -1,4 +1,4 @@
-######**CONFERENCE ORGANIZATION APP - PROJECT 4 - Version 1 - DECEMBER 2015**
+######**CONFERENCE ORGANIZATION APP - PROJECT 4 - Version 1 - NOVEMBER 2015**
 
 ####**PROJECT DESCRIPTION**
 The conference organization application, a cloud-based API server provided by Udacity in the course "Developing Scalable Apps with Python" was extended by some extra functionality using Google Cloud Endpoints. 
@@ -62,12 +62,14 @@ The following endpoints methods have been implemented for task 2:
 
 All queries required by the implemented endpoint methods are supported by the indexes.
 Two other queries that could be useful to the application where added and implemented:
+
 | endpoints method  | description|
 | ------------------|------------|
 |`getSessionsOfConferenceToday(websafeConferenceKey)`|returns all sessions of a given conference that start today|
 |`getHighlightsOfConference(websafeConferenceKey)`|returns all highlights of all sessions of the conference|
 
 The query related problem how to handle a query for all non-workshop sessions before 7pm is that only one inequality filter is allowed in the query, but the query contains two of them: type of the session being not equal to 'workshop' and start time of the session being before 7pm. This can be solved by querying with one inequality filter (e.g. all non-workshop sessions) and then sort out the sessions with the other inequality filter (e.g. start time equal or later to 7pm) manually. The decision which inequality filter is used first depends on the data. Both implementations (one querying for the exact query related problem, one more generally implemented) can be found in:
+
 | endpoints method  | description|
 | ------------------|------------|
 |`getNonWSSessionsOfConfBefore7pm(websafeConferenceKey)`|returns all non-workshop sessions of the conference before 7pm|
