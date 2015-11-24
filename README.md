@@ -32,7 +32,11 @@ The corresponding class `SessionForm` is defined as follows:
 >      - websafeConferenceKey (String)
 >      - websafeSessionKey(String)
 
-A speaker of a session is designed as a full fledged entity and defined in a class `Speaker` and a corresponding class `SpeakerForm`. The advantage of this decision is that more attributes than just the name can be stored (title, topics, description etc.) which might be interesting for users of the app, e.g. there could be another endpoint method searching for all sessions where the speaker has a defined topic.     
+A speaker of a session is designed as a full fledged entity and defined in a class `Speaker` and a corresponding class `SpeakerForm`. The advantage of this decision is that more attributes than just the name can be stored (title, topics, description etc.) which might be interesting for users of the app, e.g. there could be another endpoint method searching for all sessions where the speaker has a defined topic.
+
+When a new session is created and the speaker included in the `SessionForm` doesn't exist in the data store, an exception is raised to make sure that the Speaker entity is always created before.
+
+For convenience, an update method and a simple get method for sessions was implemented additionally.      
 
 The following endpoint methods have been implemented for task 1:
 
