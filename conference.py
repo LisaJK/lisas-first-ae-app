@@ -794,7 +794,7 @@ class ConferenceApi(remote.Service):
                       http_method='GET',
                       name='getConferenceSessionsByType')
     def getConferenceSessionsByType(self, request):
-        """ Get all sessions of the conference of the given types"""
+        """ Get all sessions of the conference of the given type"""
         # get the conference
         conf = self._getConf(request.websafeConferenceKey)
 
