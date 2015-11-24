@@ -109,6 +109,6 @@ https://lisas-first-ae-app.appspot.com/_ah/api/explorer
     - you have to allow your browser active content via HTTP at this site, 
       on Chrome, click the shield in the URL bar
     - check in the Google App Engine Launcher Log if the port is really 8080
-
+ 
 ####**CONTACT**
 lisa.kugler@googlemail.com
